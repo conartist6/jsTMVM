@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Teeny Machine Interpreter</title>
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+    <script type="text/javascript" src="js/jquery-ui-1.8.17.custom.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="css/custom-theme/jquery-ui-1.8.17.custom.css" />
+    <style type="text/css">
+	html, body
+	{
+	    height: 100%;
+	    min-height: 100%;
+	    padding: 0;
+	    margin: 0;
+	    z-index: 10;
+	}
+	#codeentry, #codeentry > .background
+	{
+	    position: absolute;
+	    width: 100%;
+	    height: 100%;
+	    z-index: 30;
+	}
+	#codeentry > .background
+	{
+	    opacity: 0.5;
+	    filter: alpha(opacity=50);
+	    background-color: #000;
+	    z-index: 20;
+	}
+	#codeentry > .entry
+	{
+	    position: absolute;
+	    height: auto;
+	    bottom: 0;
+	    top: 0;
+	    margin: 20px 0;
+	    width: 100%;
+	    /*padding: 20px 0;*/
+	    z-index: 30;
+	}
+	#codeentry > .entry > div
+	{
+	    position: relative;
+	    background-color: #FFF;
+	    height: 100%;
+	    width: 800px;
+	    margin: 0 auto;
+	}
+	#entryform > div.textarea
+	{
+	    position: absolute;
+	    height: auto;
+	    width: auto;
+	    bottom: 0;
+	    top: 0;
+	    left: 0;
+	    right: 0;
+	    margin: 4px 4px 48px 4px;
+	}
+	#entryform textarea
+	{
+	    width: 786px;
+	    height: 100%;
+	    resize: none;
+	}
+	#entryform > div.submit
+	{
+	    width: 100%;
+	    text-align: right;
+	    position: absolute;
+	    bottom: 8px;
+	}
+	#controlpane
+	{
+	    position: relative;
+	    width: 260px;
+	    overflow-y: scroll;
+	    overflow-x: hidden;
+	    height: 100%;
+	    float: left;
+	}
+	.register
+	{
+	    height: 40px;
+	    margin: 2px 0;
+	    background-color: #EEE;
+	    text-align: right;
+	}
+	.register > div.name
+	{
+	    font-size: .8em;
+	    font-weight: bold;
+	    text-align: left;
+	}
+	.register > div > span
+	{
+	    font-weight: normal;
+	}
+	#code
+	{
+	    /*float: left;*/
+	}
+	#memory
+	{
+	    /*float: left;*/
+	    height: 100%;
+	    overflow-x: scroll;
+	    text-align: right;
+
+	    -webkit-column-width: 170px;
+	    -moz-column-width: 170px;
+	    column-width: 170px;
+	    -webkit-column-fill: auto;
+	    -moz-column-fill: auto;
+	    column-fill: auto;
+	}
+	#memory > div
+	{
+	    break-inside: avoid;
+	    -webkit-column-break-inside: avoid;
+	    -moz-column-break-inside: avoid;
+	    background-color: #EEE;
+	    height: 40px;
+	    margin: 0 7px 2px 3px;
+	}	
+	.runcontrols
+	{
+	    position: absolute;
+	    left: 0;
+	    right: 0;
+	    bottom: 5px;
+	}
+	.runcontrols > div
+	{
+	    float: left;
+	    position: relative;
+	    left: 50%;
+	}
+	.runcontrols > div > div
+	{
+	    float: left;
+	    font-size: .75em;
+	    position: relative;
+	    right: 50%;
+	}
+	#runspeed
+	{
+	    padding-right: 73px;
+	}
+	#runspeed .display
+	{
+	    width: 58px;
+	    float: left;
+	    position: relative;
+	    margin-right: -68px;
+	}
+	#runspeed .display input
+	{
+	    width: 32px;
+	    margin-right: 5px;
+	}
+	#runspeed .slider
+	{
+	    width: 100%;
+	    float: left;
+	    position: relative;
+	}
+	#runspeed .slider > div
+	{
+	    margin: 4px 18px 13px 6px;
+	}
+	.clear
+	{
+	    clear: both;
+	}
+	/*clearfix:after
+	{
+	    content: ".";
+	    display: block;
+	    height: 0;
+	    clear: both;
+	    visibility: hidden;
+	}*/	    
+    </style>
+    <script type="text/javascript">
+    //<![CDATA[ 
+	var ultd = "ultd";
+	var runspeedSubscribers = [];
+
+	function asyncExManager(timing, fun, args)
+	{
+	    if(args === undefined)args = null;
+	    this.fun = fun;
+	    this.args = args;
+	    this.timing = timing;
+	    {
+		var start = (new Date).getTime();
+		for(i=0; i < timing.testIterations; i++)
+		{
+		    this.fun.apply(null, args);
+		}
+	    }
+	    diff = (new Date).getTime() - start;
+	    tPerIter = 1.0 * diff / timing.testIterations;
+	    this.runIterations = timing.responsiveness * 1000 / tPerIter;
+	    //alert(this.runIterations);
+	    this.timeout = timing.responsiveness / 2;
+	}
+
+	asyncExManager.prototype.iterate = function(timerVal)
+	{
+	    if((new Date).getTime() - timerVal > this.timeout)
+	    {
+		var i = -1;
+		do
+		{
+		    i++;
+		    if(this.timing.runSpeed != ultd) this.defer.resolve();
+		    else
+		    {
+			var oThis = this;
+			setTimeout(function(){
+				oThis.iterate.apply(oThis, [(new Date).getTime()])
+				}, this.timeout);
+		    }
+		}
+		while(this.fun.apply(null, this.args) && i < this.runIterations);
+	    }
+	}
+
+	asyncExManager.prototype.start = function()
+	{
+	    if(this.fun)
+	    {
+		this.iterate((new Date).getTime());
+		this.defer = $.Deferred();
+		return this.defer;
+	    }
+	    else
+	    {
+		alert("uninitialized asyncExManager started!");
+		return false;
+	    }
+	}
+
+	function timedStepExManager(timing, fun, args)
+	{
+	    this.timing = timing, this.fun = fun, this.args = args;
+	    this.async = new asyncExManager(timing, fun, args);
+	}
+
+	timedStepExManager.prototype.step = function(keepStepping)
+	{
+	    if(keepStepping === undefined) keepStepping = false;
+	    if(this.fun.apply(null, this.args) && keepStepping) //if the halting condition hasn't been reached
+	    {			      //schedule the next step
+		if(this.timing.runSpeed == ultd)
+		{ //When asynchronous execution bails, resume where we left off.
+		    this.async.start().done(this.step); 
+		}
+		else
+		{
+		    var oThis = this;
+		    setTimeout(function(){oThis.step.apply(oThis)}, 1000 / this.timing.runSpeed);
+		}
+	    }
+	}
+
+	timedStepExManager.prototype.start = function()
+	{
+	    if(this.fun)this.step(true);
+	    else
+	    {
+		alert("uninitialized timedStepExManager started!");
+		return false;
+	    }
+	}
+
+	function init()
+	{
+	    $.fn.extend({clearFloatingChildren :
+		function(){
+		    my = $(this);
+		    my.children().last().after('<div class="clear"></div>');
+		    return my;
+		}});	
+	    $("#cpuregs").html(function(){
+		    var code = "";
+		    for(n in regnames)
+		    {
+			code += '<div id="reg'+n+'" class="register">'+
+				    '<div class="name">'+
+					n + ' - ' + regnames[n] +
+				    '</div>' +
+				    '<div class="value"></div>' +
+				'</div>'
+		    }
+		    return code; });
+
+	    runbuttons = $("#runbuttons")
+	    runbuttons.children("a").each(
+		    function(i){ 
+			$(this).button({text: false,
+			    icons:{primary: $(this).data("img-class")},
+			    label: $(this).text()});
+			$(this).attr("href", "javascript:"); //prevent clicking on an a from reloading the page
+		    });
+	    runbuttons.buttonset();
+	    slider = $("#runspeed .slider");
+	    slider.html('<div><div class="control"></div></div>');
+	    //slider.html('<div class="control"></div>');
+
+	    slider = slider.find(".control");
+	    runspeedSubscribers = [slider, $("#textspeed"),
+				{val: function(v){timing.runSpeed = v;}}];
+	    range = {min: 1, max: 500};
+	    slider.slider($.extend(range, {value:1,
+		    slide: function(event, ui)
+		    {
+			val = ui.value;
+			if(val == range.max) val = ultd;
+			for(s in runspeedSubscribers)
+			{
+			    subscriber = runspeedSubscribers[s];
+			    if(!subscriber) break;
+
+			    if(typeof val != "number" && isSlider(subscriber)) continue;    
+			    subscriber.val(val);
+			}
+		    }}));
+	    //slider.removeAttr("class");
+	    $("#runcontrols").wrap('<div class="runcontrols"><div></div></div>'); //for css hax to centerbuttons
+	    $("#runspeed").clearFloatingChildren();
+	    
+
+	    //slider.trigger('slide');
+	    slider.slider('option', 'slide').call(slider, null, {value: slider.slider("value")}); //what a bitch.
+
+	    registers[1] = 1;
+	    program = [{name: "ADD", 0: 0, 1: 1, 2: 0},
+		       {name: "JEQ", 0: 3, 1: -2, 2: 7}];
+	    exManager = new timedStepExManager(timing, processInstruction);
+	    program = [];
+	    for(i = 0; i<8; i++) registers[i] = 0;
+	    
+	    
+	    memCells = "";
+	    for(i=99; i>=0; i--)
+	    {
+		memCells += "<div id='mem"+i+"' class='memory'/>";
+	    }
+	    $("#memory").append(memCells);
+	    $("#mem0").html(99);
+	    drawCPU();
+	}
+
+	function resetCPU()
+	{
+	    $("#memory").children().each(function(){
+		    $(this).html("");
+		    });
+	    $("#mem0").html(99);
+	    $("#cpuregs").children().each(function(){
+		    $(this).find(".value").html("0");
+		    });
+	    for(i = 0; i<8; i++) registers[i] = 0;
+	    drawCPU();
+	}
+
+	function isSlider(x)
+	{
+	    return x.jquery && typeof(x.slider("value")) == "number";
+	}
+
+	function reset()
+	{
+	    for(r in registers) registers[r].store(0);
+	}
+
+	function regMem(addr)
+	{
+	    this.address = addr;
+	    this.value = 0;
+	    this.element = $('#reg' + addr);	    
+	}
+	regMem.prototype.store = function(){
+	    element.html(value);
+	}
+
+	function parseAssembly(ass)
+	{
+	    var lines = (ass+"\n ").split("\n");
+	    var rline = /^ *[0-9]+[\s]*: /gm;
+	    var rinst = /[a-zA-Z]+/g
+	    var rabc = /[, \t]*((-?[0-9]+|[a-zA-Z]+[0-9]?)|\(-?[0-9]+|[a-zA-Z]+[0-9]?\))/g;
+	    var rnum = /-?[0-9]+|[a-zA-Z]+[0-9]?/
+
+	    for(l in lines)
+	    {
+		line = lines[l];
+		var match;
+		rline.lastIndex = 0;
+		if((match = rline.exec(line)) == null) continue;
+		rinst.lastIndex = rline.lastIndex;
+		var instNo = parseInt(rnum.exec(match));
+		program[instNo] = [];
+
+		if((match = rinst.exec(line)) == null)
+		{
+		    alert("Invalid assembly: line with no instruction name.");
+		    return false;
+		}
+		program[instNo].name = match.toString();
+		rabc.lastIndex = rinst.lastIndex;
+
+		for(i=0; i<3; i++)
+		{
+		    if((match = rabc.exec(line)) == null)
+		    {
+			alert("Invalid assembly: instruction not comprised of three values.");
+			return false;
+		    }
+		    var tempmatch = rnum.exec(match).toString().toUpperCase();
+		    //alert('tempmatch: "'+ tempmatch +'"');
+		    if(tempmatch.charAt(0).match(/[a-zA-Z]/)){
+			//alert("named register!");
+			program[instNo][i] = regnames.indexOf(tempmatch);
+		    }
+		    else program[instNo][i] = parseInt(tempmatch);
+		}
+	    }
+	}
+
+	function processInstruction(incrementPC)
+	{
+	    if(incrementPC === undefined) var incrementPC = true;
+
+	    var inst = program[registers[7]];
+	    var instName = inst.name.toUpperCase();
+	    switch(instName)
+	    {
+		case "LDA":
+		    registers[inst[0]] = registers[inst[2]] + inst[1];
+		    break;
+		case "LDC":
+		    registers[inst[0]] = inst[1];
+		    break;
+
+		case "LD":
+		    registers[inst[0]] =
+			    parseInt($('#mem' + (registers[inst[2]] + inst[1])).html());
+		    break;
+		case "ST":
+		    $('#mem' + (registers[inst[2]] + inst[1])).html(registers[inst[0]]);
+		    break;
+
+		case "ADD":
+		    registers[inst[0]] = registers[inst[1]] + registers[inst[2]]; 
+		    break;
+		case "SUB":
+		    registers[inst[0]] = registers[inst[1]] - registers[inst[2]]; 
+		    break;
+		case "MUL":
+		    registers[inst[0]] = registers[inst[1]] * registers[inst[2]]; 
+		    break;
+		case "DIV":
+		    registers[inst[0]] = ~~(registers[inst[1]] / registers[inst[2]]); 
+		    break;
+
+		case "JEQ":
+		    shouldJump = registers[inst[0]] == 0;
+		    break;
+		case "JNE":
+		    shouldJump = registers[inst[0]] != 0;
+		    break;
+		case "JLT":
+		    shouldJump = registers[inst[0]] < 0;
+		    break;
+		case "JLE":
+		    shouldJump = registers[inst[0]] <= 0;
+		    break;
+		case "JGT":
+		    shouldJump = registers[inst[0]] > 0;
+		    break;
+		case "JGE":
+		    shouldJump = registers[inst[0]] >= 0;
+		    break;
+
+		case "IN":
+		    registers[0] = prompt("Input stuff: ");
+		    break;
+		case "OUT":
+		    alert(registers[0]);
+		    break;
+
+		case "HALT":
+		    cpustatus = "stopped";
+		    break;
+	    }
+
+	    if(incrementPC)registers[7]++;
+
+	    if(instName.charAt(0) == "J")
+		if(shouldJump) registers[inst[2]] += inst[1]; 
+
+	    drawCPU();
+	    return cpustatus == "running";
+	}
+
+	function openCodeEntry()
+	{
+	    $('#codeentry').css('display', 'block');    
+	    if(assembly != "")
+		$('#assemblytext').val(assembly);
+	}
+	function closeCodeEntry()
+	{
+	    $('#codeentry').css('display', 'none');    
+	}
+
+	function drawCPU()
+	{
+	    $('.register > div.value').html(function(i){return registers[i].toString();});
+	    $('#cpustatus').html(cpustatus);
+	}
+
+	function startVM()
+	{
+	    if(!program.length) return false;
+	    cpustatus = "running";
+	    exManager.start();
+	}
+
+	function stepVM()
+	{
+	    if(!program.length) return false;
+	    else exManager.step();
+	}
+
+	function stopVM()
+	{
+	    cpustatus = "stopped";
+	    clearTimeout(clock);
+	}
+
+	var timing = {testIterations: 500, runSpeed: null, responsiveness: .01};
+	var regnames = ["ac0", "ac1", "ac2", "ac3", "GP", "FP", "SP", "PC"];
+	var assembly = "";
+	var registers = [];
+	var cpustatus = "stopped";
+	var instsPerSec = 5;
+	var clock;
+	var exManager;
+	var program = []; 
+
+	for(i=0; i<8; i++)
+	{
+	    registers[i] = 0;
+	}
+
+	$(document).ready(init);
+	//]]>
+    </script>
+</head>
+<body>
+    <div id="codeentry" style="display:none">
+	<div class="background"></div>
+	<div class="entry">
+	    <div><form method="post" action="javascript:" onSubmit="assembly=$('#assemblytext').val(); parseAssembly(assembly); closeCodeEntry(); return false;" id="entryform">
+		    <div class="textarea"><textarea id="assemblytext">Enter your assembly here.</textarea></div>
+		    <div class="submit">
+			    <a href="javascript:closeCodeEntry()">cancel</a>
+			    &nbsp;&nbsp;
+			    <input type="submit" value="Load"  />
+		    </div>
+	    </form></div>
+	</div>
+    </div>
+    <div id="controlpane">
+	<div>Processor</div>
+	<div>Status: <span id="cpustatus"></span></div>
+	<div id="cpuregs">Registers:
+	</div>
+	<div id="runcontrols">
+	<form>
+	    <div id="runspeed">
+		<div class="slider" id="realslider"></div>
+		<div class="display">
+		    <input id="textspeed" type="textbox" maxlength="4"></input>i/s
+		</div>
+	    </div>
+	    <div id="runbuttons">
+		<a onClick="openCodeEntry()" data-img-class="ui-icon-arrowreturnthick-1-n">load code</a>
+		<a onClick="resetCPU()" data-img-class="ui-icon-seek-first">reset execution</a>
+		<a onClick="stopVM()" data-img-class="ui-icon-stop">stop</a>
+		<a onClick="startVM()" data-img-class="ui-icon-play">run</a>
+		<a onClick="stepVM()" data-img-class="ui-icon-carat-1-e">step</a>
+	    </div>
+	</form>
+    	</div>
+    </div>
+    <div id="code"></div>
+    <div id="memory"></div>
+
+</body>
+</html>

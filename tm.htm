@@ -210,22 +210,20 @@
 
 	asyncExManager.prototype.iterate = function(timerVal)
 	{
-	    if((new Date).getTime() - timerVal > this.timeout)
+	    if((new Date).getTime() - timerVal < this.timeout)
 	    {
-		var i = -1;
-		do
+		var i = 0, res;
+		while((res = this.fun.apply(null, this.args)) && i < this.runIterations);
 		{
-		    i++;
-		    if(this.timing.runSpeed != ultd) this.defer.resolve();
-		    else
+		    if(this.timing.runSpeed != ultd || !res)
 		    {
-			var oThis = this;
-			setTimeout(function(){
-				oThis.iterate.apply(oThis, [(new Date).getTime()])
-				}, this.timeout);
+			this.clock = clearInterval(this.clock);
+			if(res)this.defer.resolve(); //Allow continued stepped execution.
+			else this.defer.reject(); //Stop the execution chain!
+			return;
 		    }
+		    i++;
 		}
-		while(this.fun.apply(null, this.args) && i < this.runIterations);
 	    }
 	}
 
@@ -233,7 +231,11 @@
 	{
 	    if(this.fun)
 	    {
-		this.iterate((new Date).getTime());
+		var oThis = this;
+		this.clock = setInterval(function(){
+				oThis.iterate.apply(oThis, [(new Date).getTime()])
+				}, this.timeout);
+
 		this.defer = $.Deferred();
 		return this.defer;
 	    }
@@ -257,12 +259,13 @@
 	    {			      //schedule the next step
 		if(this.timing.runSpeed == ultd)
 		{ //When asynchronous execution bails, resume where we left off.
-		    this.async.start().done(this.step); 
+		    var oThis = this;
+		    this.async.start().done(function(){oThis.step.apply(oThis, [true]);}); 
 		}
 		else
 		{
 		    var oThis = this;
-		    setTimeout(function(){oThis.step.apply(oThis)}, 1000 / this.timing.runSpeed);
+		    setTimeout(function(){oThis.step.apply(oThis, [true]);}, 1000 / this.timing.runSpeed);
 		}
 	    }
 	}
@@ -411,7 +414,7 @@
 		    alert("Invalid assembly: line with no instruction name.");
 		    return false;
 		}
-		program[instNo].name = match.toString();
+		program[instNo].name = match.toString().toUpperCase();
 		rabc.lastIndex = rinst.lastIndex;
 
 		for(i=0; i<3; i++)
@@ -436,15 +439,14 @@
 	{
 	    if(incrementPC === undefined) var incrementPC = true;
 
+	    var dbg_ino = registers[7];
 	    var inst = program[registers[7]];
-	    var instName = inst.name.toUpperCase();
+	    var instName = inst.name;
 	    switch(instName)
 	    {
-		case "LDA":
-		    registers[inst[0]] = registers[inst[2]] + inst[1];
+		case "LDA": registers[inst[0]] = registers[inst[2]] + inst[1];
 		    break;
-		case "LDC":
-		    registers[inst[0]] = inst[1];
+		case "LDC": registers[inst[0]] = inst[1];
 		    break;
 
 		case "LD":
@@ -455,47 +457,34 @@
 		    $('#mem' + (registers[inst[2]] + inst[1])).html(registers[inst[0]]);
 		    break;
 
-		case "ADD":
-		    registers[inst[0]] = registers[inst[1]] + registers[inst[2]]; 
+		case "ADD": registers[inst[0]] = registers[inst[1]] + registers[inst[2]]; 
 		    break;
-		case "SUB":
-		    registers[inst[0]] = registers[inst[1]] - registers[inst[2]]; 
+		case "SUB": registers[inst[0]] = registers[inst[1]] - registers[inst[2]]; 
 		    break;
-		case "MUL":
-		    registers[inst[0]] = registers[inst[1]] * registers[inst[2]]; 
+		case "MUL": registers[inst[0]] = registers[inst[1]] * registers[inst[2]]; 
 		    break;
-		case "DIV":
-		    registers[inst[0]] = ~~(registers[inst[1]] / registers[inst[2]]); 
+		case "DIV": registers[inst[0]] = ~~(registers[inst[1]] / registers[inst[2]]); 
 		    break;
 
-		case "JEQ":
-		    shouldJump = registers[inst[0]] == 0;
+		case "JEQ": shouldJump = registers[inst[0]] == 0;
 		    break;
-		case "JNE":
-		    shouldJump = registers[inst[0]] != 0;
+		case "JNE": shouldJump = registers[inst[0]] != 0;
 		    break;
-		case "JLT":
-		    shouldJump = registers[inst[0]] < 0;
+		case "JLT": shouldJump = registers[inst[0]] < 0;
 		    break;
-		case "JLE":
-		    shouldJump = registers[inst[0]] <= 0;
+		case "JLE": shouldJump = registers[inst[0]] <= 0;
 		    break;
-		case "JGT":
-		    shouldJump = registers[inst[0]] > 0;
+		case "JGT": shouldJump = registers[inst[0]] > 0;
 		    break;
-		case "JGE":
-		    shouldJump = registers[inst[0]] >= 0;
+		case "JGE": shouldJump = registers[inst[0]] >= 0;
 		    break;
 
-		case "IN":
-		    registers[0] = prompt("Input stuff: ");
+		case "IN": registers[0] = prompt("Input stuff: ");
 		    break;
-		case "OUT":
-		    alert(registers[0]);
+		case "OUT": alert(registers[0]);
 		    break;
 
-		case "HALT":
-		    cpustatus = "stopped";
+		case "HALT": cpustatus = "stopped";
 		    break;
 	    }
 
@@ -503,6 +492,13 @@
 
 	    if(instName.charAt(0) == "J")
 		if(shouldJump) registers[inst[2]] += inst[1]; 
+
+	    if(!program[registers[7]] || !program[registers[7]].name)
+	    {
+		alert("The program attempted to access the invalid instruction " +
+			registers[7] + ".\n@instruction: " + dbg_ino);
+		cpustatus = "errawr";
+	    }
 
 	    drawCPU();
 	    return cpustatus == "running";
@@ -516,7 +512,8 @@
 	}
 	function closeCodeEntry()
 	{
-	    $('#codeentry').css('display', 'none');    
+	    $('#codeentry').css('display', 'none');
+	    resetCPU();
 	}
 
 	function drawCPU()

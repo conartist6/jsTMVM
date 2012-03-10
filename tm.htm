@@ -206,14 +206,15 @@
 	    this.runIterations = timing.responsiveness * 1000 / tPerIter;
 	    //alert(this.runIterations);
 	    this.timeout = timing.responsiveness / 2;
+	    this.lastFinished = start;
 	}
 
 	asyncExManager.prototype.iterate = function(timerVal)
 	{
-	    if((new Date).getTime() - timerVal < this.timeout)
+	    if(this.startTime + ~~(this.timeout * 1000 * this.numTicks) > this.lastFinished)
 	    {
 		var i = 0, res;
-		while((res = this.fun.apply(null, this.args)) && i < this.runIterations);
+		while((res = this.fun.apply(null, this.args)), i < this.runIterations)
 		{
 		    if(this.timing.runSpeed != ultd || !res)
 		    {
@@ -224,7 +225,9 @@
 		    }
 		    i++;
 		}
+		this.lastFinished = (new Date).getTime();
 	    }
+	    this.numTicks++;
 	}
 
 	asyncExManager.prototype.start = function()
@@ -232,9 +235,12 @@
 	    if(this.fun)
 	    {
 		var oThis = this;
+		this.startTime = (new Date).getTime();
+		this.numTicks = 0;
 		this.clock = setInterval(function(){
-				oThis.iterate.apply(oThis, [(new Date).getTime()])
-				}, this.timeout);
+			    oThis.iterate.apply(oThis)//,
+				    //[oThis.startTime + ~~(oThis.timeout * 1000 * oThis.numTicks)])
+			}, this.timeout);
 
 		this.defer = $.Deferred();
 		return this.defer;
@@ -265,7 +271,7 @@
 		else
 		{
 		    var oThis = this;
-		    setTimeout(function(){oThis.step.apply(oThis, [true]);}, 1000 / this.timing.runSpeed);
+		    setTimeout(function(){oThis.step.apply(oThis, [true]);}, 1000 / oThis.timing.runSpeed);
 		}
 	    }
 	}
@@ -541,7 +547,7 @@
 	    clearTimeout(clock);
 	}
 
-	var timing = {testIterations: 500, runSpeed: null, responsiveness: .01};
+	var timing = {testIterations: 500, runSpeed: null, responsiveness: .03};
 	var regnames = ["ac0", "ac1", "ac2", "ac3", "GP", "FP", "SP", "PC"];
 	var assembly = "";
 	var registers = [];

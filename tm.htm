@@ -159,15 +159,17 @@
 	    font-size: 1.1em;
 	    padding-top: .2em;
 	}
-	.gp .cellHeader
-	{
-	    background-color: #0050DF !important;
-	}
 	.sp .cellHeader
 	{
+	    background-color: #EDB021 !important;
 	}
 	.fp .cellHeader
 	{
+	    background-color: #E8640C !important;
+	}
+	.gp .cellHeader
+	{
+	    background-color: #0050DF !important;
 	}
 	.runcontrols
 	{
@@ -241,9 +243,11 @@
 	    }
 	    var self = this;
 	    this.mem = mem;
+	    var pc = 7;
 	    this.reset = function(redraw)
 	    {
 		if(redraw === undefined) redraw = true;
+		if(this.exManager)this.stop();
 		for(i = 0; i<8; i++) this.registers[i] = 0;
 		if(redraw)this.draw();
 	    }
@@ -264,6 +268,22 @@
 		self.jqCells.val(function(i){return self.registers[i]});
 		self.jqStatus.html(self.status);
 	    }
+	    this.stop = function()
+	    {
+		self.status = "stopped";
+		self.exManager.stop();
+	    }
+	    this.start = function()
+	    {
+		if(!this.hasProgram()) return false;
+		self.status = "running";
+		this.exManager.start();
+	    }
+	    this.step = function()
+	    {
+		if(!this.hasProgram()) return false;
+		else self.exManager.step();
+	    }
 
 	    this.registers = [];
 	    this.reset(false);
@@ -275,10 +295,10 @@
 		var instructions = self.program.instructions;
 		var regs = self.registers;
 		var mem = self.mem;
-		var dbg_ino = regs[7];
-		var inst = instructions[regs[7]];
+		var dbg_ino = regs[pc];
+		var inst = instructions[regs[pc]];
 		var instName = inst.name;
-		var oldPtrs = [regs[4], regs[5], regs[6]];
+		var oldPtrs = {4: regs[4], 5: regs[5], 6: regs[6]};
 		switch(instName)
 		{
 		    case "LDA": regs[inst[0]] = regs[inst[2]] + inst[1];
@@ -287,7 +307,9 @@
 			break;
 
 		    case "LD":
-			regs[inst[0]] = parseInt(mem.readAddr(regs[inst[2]] + inst[1]));
+			var text = mem.readAddr(regs[inst[2]] + inst[1]);
+			if(text === "") alert("You've read from uninitialized memory!\n@instruction " + inst[pc]);
+			regs[inst[0]] = parseInt(text);
 			break;
 		    case "ST":
 			mem.writeAddr(regs[inst[2]] + inst[1], regs[inst[0]]);
@@ -324,14 +346,18 @@
 			break;
 		}
 
-		if(incrementPC)regs[7]++;
+		if(incrementPC)regs[pc]++;
 
 		if(instName.charAt(0) == "J")
 		    if(shouldJump) regs[inst[2]] += inst[1]; 
 
-		//for
+		for(i=4; i<=6; i++)
+		{
+		    if(oldPtrs[i] != regs[i])
+		    self.mem.ptrChanged(regs[i], self.regnames[i].toLowerCase());
+		}
 
-		if(!instructions[regs[7]] || !instructions[regs[7]].name)
+		if(self.status == "running" && (!instructions[regs[7]] || !instructions[regs[7]].name))
 		{
 		    alert("The program attempted to access the invalid instruction " +
 			    regs[7] + ".\n@instruction: " + dbg_ino);
@@ -346,22 +372,7 @@
 	    var exManager;
 	    this.regnames = ["ac0", "ac1", "ac2", "ac3", "GP", "FP", "SP", "PC"];
 
-	    this.start = function()
-	    {
-		if(!this.hasProgram()) return false;
-		self.status = "running";
-		this.exManager.start();
-	    }
-	    this.stop = function()
-	    {
-		self.status = "stopped";
-		self.exManager.stop();
-	    }
-	    this.step = function()
-	    {
-		if(!this.hasProgram()) return false;
-		else self.exManager.step();
-	    }
+
 	    $(function()
 	    {
 		cpuregs = $("#cpuregs")
@@ -395,24 +406,48 @@
 	    this.vm = vm;
 	    this.settings = settings;
 	    this.size = settings.memsize;
-	    this.oldPtrs = [];
+	    this.ptrs = [];
+	    this.pnames = ["gp", "fp", "sp"];
+
+	    var setPtrs = function()
+	    {
+		var z = $(this.cells[0]);
+		//this.ptrs = {gp: z, sp: z, fp: [z]}
+		this.ptrs = {gp: z, sp: z, fp: z}
+	    }
+
 	    this.reset = function()
 	    {
 		self.cells.val("");
 		$("#mem0").val(self.size-1);
-		$(self.cells[0]).gp(false).fp(false).sp(false);
+
+		_.each(this.pnames, function(i){this.ptrChanged(0, i).header()}, this);
+		_.bind(setPtrs, this)();
+		$(self.cells[0]).gp(true).fp(true).sp(true);
+
 		self.cells.showHideCellHeader();
-		for(i in self.oldPtrs) self.oldPtrs[i] = 0;
 	    };
 
 	    this.readAddr = function(addr)
 	    {
-		return this.cells[addr].val();
+		return $(this.cells[addr]).val();
 	    }
 
 	    this.writeAddr = function(addr, value)
 	    {
-		this.cells[addr].val(value);
+		if(addr >= self.size) alert("STACK OVERFLOW!!!!!");
+		$(this.cells[addr]).val(value);
+	    }
+
+	    this.gpChanged = function(addr){return ptrChanged(addr, "gp")};
+	    this.spChanged = function(addr){return ptrChanged(addr, "sp")};
+
+	    this.ptrChanged = function(addr, name)
+	    {
+		self.ptrs[name].regPtr(name, false).header().showHideCellHeader();	
+		self.ptrs[name] = $(self.cells[addr]);
+		self.ptrs[name].regPtr(name, true).header();
+		return self.ptrs[name].showHideCellHeader();
 	    }
 
 	    $.fn.extend({ //clearFloatingChildren, gp, sp, fp, regPtr
@@ -420,31 +455,31 @@
 		    this.children().last().after('<div class="clear"></div>');
 		    return this;
 		},
-		gp: function(clear){
-		    return this.regPtr("gp", clear);
-		},
-		sp: function(clear)
+		fp: function(setTo){ return this.each(function(){$(this).regPtr("fp", setTo)})},
+		gp: function(setTo){ return this.regPtr("gp", setTo) },
+		sp: function(setTo){ return this.regPtr("sp", setTo) },
+		regPtr: function(name, setTo)
 		{
-		    return this.regPtr("sp", clear);
-		},
-		fp: function(clear)
-		{
-		    return this.regPtr("fp", clear);
-		},
-		regPtr: function(name, clear)
-		{
-		    if(clear)this.removeClass(name);
-		    else
+		    if(setTo === undefined) return this.hasClass(name); //getter
+		    else if(setTo == false)this.removeClass(name);
+		    else if(setTo == true)this.addClass(name);
+		    /*else
 		    {
 			$(self.cells[self.oldPtrs[name]]).toggleClass(name);
 			self.oldPtrs[name] = this.data("address");
 			this.toggleClass(name);
-		    }
-		return this;
-		}});
-
-	    $.fn.extend({showHideCellHeader :
-		function(){
+		    }*/
+		    return this;
+		},
+		header: function()
+		{
+		    names = [];
+		    _.each(self.pnames, function(i){if(this.regPtr(i))names.push(i.toUpperCase())}, this);
+		    var text = names.join(", ");
+		    return this.find(".cellHeader .right").html(text);		
+		},
+		showHideCellHeader : function()
+		{
 		    return this.each(function()
 			{
 			    jqThis = $(this);
@@ -466,7 +501,7 @@
 		    memCells += '<div class="memCell" id="mem'+i+'">' +
 				    '<div class="cellHeader">' +
 					'<div class="left">' + i + '</div>' + 
-					'<div class="right">fabulous</div>' +
+					'<div class="right"></div>' +
 				    '</div>' +
 				    '<div class="value">' +
 				    (self.size - i - 1).toString() +
@@ -476,6 +511,7 @@
 		$("#memory").append(memCells);
 		self.cells = $("#memory").find(".memCell").reverse();
 		self.cells.each(function(i){$(this).data("address", i)});
+		_.bind(setPtrs, self)();
 	    });
 	}
 
@@ -485,7 +521,7 @@
 	    this.timingTestIterations = 500;
 	    this.responsiveness = .03;
 	    this.addrPrintInterval = 4;
-	    this.memsize = 100;
+	    this.memsize = 60;
 	}
 
 	function program(text)
@@ -614,6 +650,14 @@
 
 	$(function()
 	{
+	    _.recursiveEach = function(list, iterator, context)
+	    {
+		if(list == null) return;
+		_.each(list, function(i){
+			((i.length === +i.length)? _.bind(_.each, this, i, iterator, context):
+			_.bind(iterator, this, i))();
+		    });
+	    };
 	    $.fn.reverse = [].reverse;
 	    $.valHooks.div = {
 		get: function(elem)

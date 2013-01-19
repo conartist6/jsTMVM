@@ -2,11 +2,58 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
     <title>Teeny Machine Interpreter</title>
-    <script type="text/javascript" src="js/jquery-1.7.1.js"></script>
-    <script type="text/javascript" src="js/jquery-ui-1.8.17.custom.min.js"></script>
-    <script type="text/javascript" src="js/underscore-min.js"></script>
+
+    <script>
+	var require = {
+	    baseUrl: "js/lib",
+	    paths: {
+		app: "../"
+	    },
+	    deps: ["/explanation/explanation.js"]
+	}
+
+	var modalLoadSample = function()
+	{
+	    $.get('quicksort.tm', function(sampleprogram)
+		    {
+			vm.cpu.loadProgram(new program(sampleprogram));
+			vm.reset();
+			$('#explanationmodal').dialog('close');
+		    })
+	}
+    </script>
+    <script type="text/template" id="explanation">
+	<div title="What is it?" id="explanationmodal"
+		data-modal-height="400" data-modal-width="550">
+	    <p>Welcome to the Javascript Teeny Machine Virtual Machine!
+	    <p>
+	    If you're not really sure what it does then the easiest thing
+	    to do is to just try it out:
+	    <p style="text-align:center">
+	    <a class="button"
+		    href="javascript:modalLoadSample()">
+		Load Quicksort
+	    </a>
+	    <p>
+	    GP, FP, and SP are the global, frame, and stack pointers respectively, and are
+	    maintained as registers as well as being labelled in memory for convenience.
+	    <p>
+	    The code is not all that pretty; however there are some good bits in
+	    <a href="/js/executionManager.js">executionmanager.js</a>
+	    (try dragging the speed slider all the way over to the right to see what
+		    that class is responsible for) and in
+	    <a href="/explanation/explanation.js">explanation.js</a>,
+	    a reusable require module which powers this
+	    very dialog box.
+	    <p>For more information check the project out at
+	    <a href="http://github.com/conartist6/jstmvm">github</a>.
+	</div>
+    </script>
+    <script type="text/javascript" src="/js/require-jquery.js"></script>
+    <script type="text/javascript" src="/js/underscore-min.js"></script>
+    <script type="text/javascript" src="/js/jquery-ui.js"></script>
     <script type="text/javascript" src="js/executionManager.js"></script>
-    <link rel="stylesheet" type="text/css" href="css/custom-theme/jquery-ui-1.8.17.custom.css" />
+    <link rel="stylesheet" type="text/css" href="css/custom-theme/jquery-ui.css" />
     <style type="text/css">
 	html, body
 	{
@@ -132,8 +179,8 @@
 	}
 	#memory > div > .cellHeader .left
 	{
-	    width: 0px;
-	    overflow: visible;
+	    /*width: 0px;
+	    overflow: visible;*/
 	    float: left;
 	}
 
@@ -242,8 +289,6 @@
 		return false;
 	    }
 	    var self = this;
-	    this.mem = mem;
-	    var pc = 7;
 	    this.reset = function(redraw)
 	    {
 		if(redraw === undefined) redraw = true;
@@ -251,7 +296,7 @@
 		for(i = 0; i<8; i++) this.registers[i] = 0;
 		if(redraw)this.draw();
 	    }
-	    this.loadProgram = function(program)
+	    this.loadProgram = function (program)
 	    {
 		this.program = program;
 	    }
@@ -282,7 +327,7 @@
 	    this.step = function()
 	    {
 		if(!this.hasProgram()) return false;
-		else self.exManager.step();
+		if(self.program.instructions[self.registers[7]].name != "HALT") self.exManager.step();
 	    }
 
 	    this.registers = [];
@@ -294,9 +339,9 @@
 
 		var instructions = self.program.instructions;
 		var regs = self.registers;
-		var mem = self.mem;
-		var dbg_ino = regs[pc];
-		var inst = instructions[regs[pc]];
+		var dbg_ino, pc = regs[7];
+		regs[7]++;
+		var inst = instructions[pc];
 		var instName = inst.name;
 		var oldPtrs = {4: regs[4], 5: regs[5], 6: regs[6]};
 		switch(instName)
@@ -308,7 +353,8 @@
 
 		    case "LD":
 			var text = mem.readAddr(regs[inst[2]] + inst[1]);
-			if(text === "") alert("You've read from uninitialized memory!\n@instruction " + inst[pc]);
+			if(text === "")
+			    alert("You've read from uninitialized memory!\n@instruction " + regs[pc]);
 			regs[inst[0]] = parseInt(text);
 			break;
 		    case "ST":
@@ -342,25 +388,26 @@
 		    case "OUT": alert(regs[0]);
 			break;
 
-		    case "HALT": self.status = "stopped";
+		    case "HALT":
+			self.status = "stopped";
+			incrementPC = false;
 			break;
 		}
 
-		if(incrementPC)regs[pc]++;
+		if(instName.charAt(0) == "J" && shouldJump) regs[inst[2]] += inst[1]; 
 
-		if(instName.charAt(0) == "J")
-		    if(shouldJump) regs[inst[2]] += inst[1]; 
-
+		$("#nextinstructions").html(instructions.slice(regs[7], regs[7]+20).join("<br/>"));
+		
 		for(i=4; i<=6; i++)
 		{
 		    if(oldPtrs[i] != regs[i])
-		    self.mem.ptrChanged(regs[i], self.regnames[i].toLowerCase());
+		    mem.ptrChanged(regs[i], instruction.prototype.regNames[i].toLowerCase());
 		}
 
 		if(self.status == "running" && (!instructions[regs[7]] || !instructions[regs[7]].name))
 		{
 		    alert("The program attempted to access the invalid instruction " +
-			    regs[7] + ".\n@instruction: " + dbg_ino);
+			    regs[7] + ".\n@instruction: " + pc);
 		    self.status = "errawr";
 		}
 
@@ -370,19 +417,17 @@
 
 	    this.status = "stopped";
 	    var exManager;
-	    this.regnames = ["ac0", "ac1", "ac2", "ac3", "GP", "FP", "SP", "PC"];
-
-
+	    var regnames = instruction.prototype.regNames;
 	    $(function()
 	    {
 		cpuregs = $("#cpuregs")
 		cpuregs.html(function(){
 			var code = "";
-			for(n in self.regnames)
+			for(n in regnames)
 			{
 			    code += '<div id="reg'+n+'" class="register">'+
 					'<div class="name">'+
-					    n + ' - ' + self.regnames[n] +
+					    n + ' - ' + regnames[n] +
 					'</div>' +
 					'<div class="value"></div>' +
 				    '</div>'
@@ -402,55 +447,51 @@
 	
 	function mem(vm, settings)
 	{
-	    var self = this;
-	    this.vm = vm;
-	    this.settings = settings;
 	    this.size = settings.memsize;
-	    this.ptrs = [];
+	    var self = this;
+	    var ptrs = [];
 	    this.pnames = ["gp", "fp", "sp"];
+	    var cells;
 
-	    var setPtrs = function()
+	    var setPtrs = function ()
 	    {
-		var z = $(this.cells[0]);
+		var z = $(cells[0]);
 		//this.ptrs = {gp: z, sp: z, fp: [z]}
-		this.ptrs = {gp: z, sp: z, fp: z}
-	    }
+		ptrs = {gp: z, sp: z, fp: z};
+	    };
 
 	    this.reset = function()
 	    {
-		self.cells.val("");
+		cells.val("");
 		$("#mem0").val(self.size-1);
 
 		_.each(this.pnames, function(i){this.ptrChanged(0, i).header()}, this);
 		_.bind(setPtrs, this)();
-		$(self.cells[0]).gp(true).fp(true).sp(true);
+		$(cells[0]).gp(true).fp(true).sp(true);
 
-		self.cells.showHideCellHeader();
+		cells.showHideCellHeader();
 	    };
 
 	    this.readAddr = function(addr)
 	    {
-		return $(this.cells[addr]).val();
+		return $(cells[addr]).val();
 	    }
 
 	    this.writeAddr = function(addr, value)
 	    {
 		if(addr >= self.size) alert("STACK OVERFLOW!!!!!");
-		$(this.cells[addr]).val(value);
+		$(cells[addr]).val(value);
 	    }
-
-	    this.gpChanged = function(addr){return ptrChanged(addr, "gp")};
-	    this.spChanged = function(addr){return ptrChanged(addr, "sp")};
 
 	    this.ptrChanged = function(addr, name)
 	    {
-		self.ptrs[name].regPtr(name, false).header().showHideCellHeader();	
-		self.ptrs[name] = $(self.cells[addr]);
-		self.ptrs[name].regPtr(name, true).header();
-		return self.ptrs[name].showHideCellHeader();
+		ptrs[name].regPtr(name, false).header().showHideCellHeader();	
+		ptrs[name] = $(self.cells[addr]);
+		ptrs[name].regPtr(name, true).header();
+		return ptrs[name].showHideCellHeader();
 	    }
 
-	    $.fn.extend({ //clearFloatingChildren, gp, sp, fp, regPtr
+	    $.fn.extend({ //clearFloatingChildren, gp, sp, fp, regPtr, header, showHideCellHeader
 		clearFloatingChildren : function(){
 		    this.children().last().after('<div class="clear"></div>');
 		    return this;
@@ -463,12 +504,6 @@
 		    if(setTo === undefined) return this.hasClass(name); //getter
 		    else if(setTo == false)this.removeClass(name);
 		    else if(setTo == true)this.addClass(name);
-		    /*else
-		    {
-			$(self.cells[self.oldPtrs[name]]).toggleClass(name);
-			self.oldPtrs[name] = this.data("address");
-			this.toggleClass(name);
-		    }*/
 		    return this;
 		},
 		header: function()
@@ -476,7 +511,8 @@
 		    names = [];
 		    _.each(self.pnames, function(i){if(this.regPtr(i))names.push(i.toUpperCase())}, this);
 		    var text = names.join(", ");
-		    return this.find(".cellHeader .right").html(text);		
+		    this.find(".cellHeader .right").html(text);
+		    return this;
 		},
 		showHideCellHeader : function()
 		{
@@ -485,10 +521,17 @@
 			    jqThis = $(this);
 			    if(!jqThis.hasClass("memCell")) return;
 			    var i = jqThis.data("address");
-			    if(!((self.size-i-1) % self.vm.settings.addrPrintInterval) || jqThis.hasClass("gp")
+			    if(!((self.size-i-1) % settings.addrPrintInterval) || jqThis.hasClass("gp")
 				    || jqThis.hasClass("sp") || jqThis.hasClass("fp"))
 				jqThis.children(".cellHeader").css("display", "block");
 			    else jqThis.children(".cellHeader").css("display", "none");
+			});
+		},
+		fadeHeader : function()
+		{
+		    return this.each(function()
+			{
+			    
 			});
 		}
 	    });
@@ -511,6 +554,7 @@
 		$("#memory").append(memCells);
 		self.cells = $("#memory").find(".memCell").reverse();
 		self.cells.each(function(i){$(this).data("address", i)});
+		cells = self.cells;
 		_.bind(setPtrs, self)();
 	    });
 	}
@@ -521,7 +565,7 @@
 	    this.timingTestIterations = 500;
 	    this.responsiveness = .03;
 	    this.addrPrintInterval = 4;
-	    this.memsize = 60;
+	    this.memsize = 100;
 	}
 
 	function program(text)
@@ -532,9 +576,9 @@
 		var instructions = [];
 		var lines = (this.text+"\n ").split("\n");
 		var rline = /^ *[0-9]+[\s]*: /gm;
-		var rinst = /[a-zA-Z]+/g
+		var rinst = /[a-zA-Z]+/g;
 		var rabc = /[, \t]*((-?[0-9]+|[a-zA-Z]+[0-9]?)|\(-?[0-9]+|[a-zA-Z]+[0-9]?\))/g;
-		var rnum = /-?[0-9]+|[a-zA-Z]+[0-9]?/
+		var rnum = /-?[0-9]+|[a-zA-Z]+[0-9]?/;
 
 		for(l in lines)
 		{
@@ -544,7 +588,7 @@
 		    if((match = rline.exec(line)) == null) continue;
 		    rinst.lastIndex = rline.lastIndex;
 		    var instNo = parseInt(rnum.exec(match));
-		    instructions[instNo] = [];
+		    instructions[instNo] = new instruction();
 
 		    if((match = rinst.exec(line)) == null)
 		    {
@@ -569,11 +613,54 @@
 			}
 			else instructions[instNo][i] = parseInt(tempmatch);
 		    }
+		    instructions[instNo].comment = line.substring(rabc.lastIndex + 1, line.length);
 		}
 		return instructions;
 	    }
 	    this.instructions = this.parse(text);
 	}
+
+	function instruction()
+	{ 
+	}
+
+	instruction.prototype.argtypes = function()
+	{
+	    switch(this.name)
+	    {
+		case "HALT": case "IN": case "OUT":
+		    return ["c", "c", "c"];
+		case "LD": case "ST":
+		    return ["r", "c", "m"];
+		case "LDA": case "JEQ": case "JNE": case "JLT":
+		case "JLE": case "JGT": case "JGE":
+		    return ["r", "c", "r"];
+		case "LDC":
+		    return ["r", "c", "c"];
+		case "ADD": case "SUB": case "MUL": case "DIV":
+		    return ["r", "r", "r"];
+		default:
+		    return [];
+	    }
+	}
+
+	instruction.prototype.toString = function()
+	{
+	    var atypes = this.argtypes();
+	    return this.name +": "+
+		this.printArg(0, atypes) +" "+ this.printArg(1, atypes) +" "+ this.printArg(2, atypes) +" "+ this.comment;
+	}
+
+	instruction.prototype.printArg = function(i, atypes)
+	{
+	    if(atypes[i] == "r")
+	    {
+		return this.regNames[this[i]]; 
+	    }
+	    else return this[i].toString();
+	}
+
+	instruction.prototype.regNames = ["ac0", "ac1", "ac2", "ac3", "GP", "FP", "SP", "PC"] 
 
 	function ui()
 	{
@@ -599,16 +686,16 @@
 		range = {min: 1, max: 500, value: vm.settings.defaultInstsPerSec};
 		slider.slider($.extend(range, 
 			{slide: function(event, ui)
-			{
-			    val = ui.value;
-			    if(val == range.max) val = ultd;
-			    for(s in runspeedSubscribers)
 			    {
-				subscriber = runspeedSubscribers[s];
-				if(!subscriber || typeof val != "number" && isSlider(subscriber)) continue;
-				subscriber.val(val);
-			    }
-			}}));
+				val = ui.value;
+				if(val == range.max) val = ultd;
+				for(s in runspeedSubscribers)
+				{
+				    subscriber = runspeedSubscribers[s];
+				    if(!subscriber || typeof val != "number" && isSlider(subscriber)) continue;
+				    subscriber.val(val);
+				}
+			    }}));
 		//slider.removeAttr("class");
 		$("#runcontrols").wrap('<div class="runcontrols"><div></div></div>'); //for css hax to centerbuttons
 		$("#runspeed").clearFloatingChildren();
@@ -675,7 +762,7 @@
 
 	function isSlider(x)
 	{
-	    return x.jquery && typeof(x.slider("value")) == "number";
+	    return x.jquery && x[slider];
 	}
 
 	function openCodeEntry()
@@ -693,6 +780,19 @@
 	var vm = new vm();
 
 	//]]>
+    </script>
+    <script type="text/javascript">
+
+      var _gaq = _gaq || [];
+        _gaq.push(['_setAccount', 'UA-30090438-1']);
+	  _gaq.push(['_trackPageview']);
+
+	    (function() {
+	         var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+		     ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+		         var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+			   })();
+
     </script>
 </head>
 <body>
@@ -714,6 +814,7 @@
 	<div>Status: <span id="cpustatus"></span></div>
 	<div id="cpuregs">Registers:
 	</div>
+	<div id="nextinstructions"></div>
 	<div id="runcontrols">
 	<form>
 	    <div id="runspeed">
